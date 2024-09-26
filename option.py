@@ -118,6 +118,7 @@ class TrainVQOptionParser(BaseOptionParser):
 
     @staticmethod
     def post_process(args):
+        #去除前后空白，并根据逗号分割字符串，以便将其转换为一个列表。
         args.needed_channel_names = args.needed_channel_names.strip().split(',')
         args.needed_channel_names_phase_decoder = args.needed_channel_names_phase_decoder.strip().split(',')
         return args

@@ -98,7 +98,8 @@ def main():
         args = pickle.load(open(osp.join(test_args.save, "args.pkl"), "rb"))
         args = option_parser.deserialize(args)
     else:
-        with open(osp.join(test_args.save, "args.txt"), "r") as f:
+        file_path = osp.join(test_args.save, "args.txt")
+        with open(file_path, "r") as f:
             args = option_parser.text_deserialize(f.read().split())
             args = option_parser.post_process(args)
 

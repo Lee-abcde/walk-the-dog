@@ -29,6 +29,10 @@ from trainers.phase_decoder import PhaseDecoderTrainer
 
 
 def prepare_phase_decoder(args, args_phase_decoder, motion_data):
+    # 该函数的作用是：
+    # 创建相位解码器模型，并为其指定数据和输出特征。
+    # 处理模型的名称和输出维度信息，用于在训练过程中记录和配置模型。
+    # 创建并返回一个相位解码器训练器，它将管理解码器的训练流程。
     network = phase_decoder_model.create_model_from_args2(args, motion_data)
     phase_model_name = args.save[-7:].replace('/', '-')
     output_channel_names = args.needed_channel_names_phase_decoder
@@ -51,12 +55,15 @@ def main():
     option_parser = TrainVQOptionParser()
     args = option_parser.parse_args()
 
+    # the input storage path
     Save = args.save
     utility.MakeDirectory(Save)
+    # write args.txt
     with open(osp.join(Save, "args.txt"), "w") as file:
         file.write(option_parser.text_serialize(args))
     args = option_parser.post_process(args)
 
+    # 创建log folder
     log_dir = osp.join(Save, 'log')
     if os.path.exists(log_dir) and 'test' not in log_dir:
         print('log dir exists, remove it [y/n]?')
@@ -65,18 +72,21 @@ def main():
             return
     if osp.exists(log_dir):
         os.system(f'rm -rf {log_dir}')
+    # PyTorch 中 TensorBoard 的一个组件，主要用于记录和可视化训练过程中的数据
     summary_writer = SummaryWriter(log_dir)
+    # 自定义了一个类LossRecorder， SummaryWriter是其中的一个变量
     loss_recorder = LossRecorder(summary_writer)
 
     plot_cnt = 0
 
+    # load motion data
     motion_datas = create_dataset_from_args(args)
-    lengths = [len(data) for data in motion_datas]
-    idx = np.argsort(lengths)
-    smallest_idx = idx[0]
+    lengths = [len(data) for data in motion_datas] #列表推导式来计算每个数据集的长度
+    idx = np.argsort(lengths) #将返回一个包含索引的数组，按对应的长度升序排列。
+    smallest_idx = idx[0] #获取第一个索引，即长度最小的数据集的索引。
 
-    plt.ioff()
-    fig1, ax1 = plt.subplots(6,1)
+    plt.ioff() # 关闭 Matplotlib 的交互模式
+    fig1, ax1 = plt.subplots(6,1) #创建一个包含 6 行 1 列的子图
     fig2, ax2 = plt.subplots(args.phase_channels,5)
     if args.phase_channels == 1:
         ax2 = ax2[None]
@@ -99,12 +109,12 @@ def main():
     loss_history = utility.PlottingWindow("Loss History", ax=ax4, min=0, drawInterval=args.plotting_interval)
 
     # Build network model
-    networks, VQs = model.create_model_from_args(args, motion_datas)
+    networks, VQs = model.create_model_from_args(args, motion_datas) # VQ是ResidualVectorQuantizer
     networks = utility.ToDevice(networks)
     VQs = utility.ToDevice(VQs)
 
-    params = sum([list(n.parameters()) for n in networks], [])
-    params += list(VQs.parameters())
+    params = sum([list(n.parameters()) for n in networks], []) #networks 可能是一个由多个模型组成的列表。n.parameters() 返回模型 n 的所有参数（权重和偏差等）。
+    params += list(VQs.parameters()) #这一行将量化器 VQs 的参数也添加到 params 列表中，这样所有模型和量化器的参数都被收集到了 params 列表中。
 
     # Setup optimizer and loss function
     optimizer = adamw.AdamW(params, lr=args.learning_rate, weight_decay=args.weight_decay)
@@ -114,7 +124,7 @@ def main():
 
     criteria = {'rec': torch.nn.MSELoss()}
 
-    if args.train_phase_decoder:
+    if args.train_phase_decoder: # 训练解码器
         phase_decoder_trainers = []
         for data in motion_datas:
             phase_decoder_trainers.append(prepare_phase_decoder(args, args, data))
@@ -123,24 +133,25 @@ def main():
 
     nan_count = 0
 
+    #start to train
     for epoch in range(args.epochs):
-        scheduler.step()
-        loop = tqdm(range(len(data_loaders[smallest_idx])))
+        scheduler.step() #每个epoch调用一次学习率调度器
+        loop = tqdm(range(len(data_loaders[smallest_idx]))) #用tqdm创建一个循环进度条，循环次数等于最小数据集的批次长度。
         its = [iter(loader) for loader in data_loaders]
         VQs.clear_buffer()
         for n_iters in loop:
-            loss_totals = []
+            loss_totals = [] #初始化一个空列表，用于存储每个类别的损失
             for class_idx in range(len(data_loaders)):
                 #Run model prediction
-                motion_data = motion_datas[class_idx]
+                motion_data = motion_datas[class_idx] #获取当前类别的数据对象
                 VQs.set_caller(class_idx)
                 network = networks[class_idx]
-                train_batch = next(its[class_idx])
+                train_batch = next(its[class_idx]) #从当前类别的数据迭代器中获取下一批次的数据
                 network.train()
                 VQs.train()
                 losses = {}
                 train_batch = utility.ToDevice(train_batch)
-                pae_input = motion_data.get_feature_by_names(train_batch, args.needed_channel_names)
+                pae_input = motion_data.get_feature_by_names(train_batch, args.needed_channel_names) # pae = phase autoEncoder
                 yPred, latent, signal, params, vq_info = network(pae_input)
 
                 if args.train_phase_decoder:
@@ -172,11 +183,11 @@ def main():
 
                 _a_ = Item(params[2]).reshape(-1, args.phase_channels).numpy()
                 for i in range(_a_.shape[0]):
-                    dist_amps.append(_a_[i, :])
+                    dist_amps.append(_a_[i, :]) #将每行振幅数据追加到dist_amps列表中，dist_amps可能是一个存储振幅分布的列表。
                 while len(dist_amps) > 10000:
                     dist_amps.pop(0)
 
-                _f_ = Item(params[1]).reshape(-1, args.phase_channels).numpy()
+                _f_ = Item(params[1]).reshape(-1, args.phase_channels).numpy() #将params[1]（可能是频率信息）转换为特定形状的NumPy数组。
                 for i in range(_f_.shape[0]):
                     dist_freqs.append(_f_[i, :])
                 while len(dist_freqs) > 10000:

@@ -6,8 +6,9 @@ import os.path as osp
 
 
 def create_dataset_from_args(args):
-    paths = args.load.split(',')
+    paths = args.load.split(',') # divide different dataset
     motion_data = []
+    # FeatureCombinedData是自己写的dataset类
     for path in paths:
         motion_data.append(FeatureCombinedData(path, args.window, args.normalize, args.test_sequence_ratio,
                                                args.std_cap, args.extra_frames,
