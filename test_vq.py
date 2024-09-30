@@ -94,6 +94,7 @@ def main():
 
     to_save = {}
 
+    # 检查并加载保存的参数文件
     if osp.exists(osp.join(test_args.save, "args.pkl")):
         args = pickle.load(open(osp.join(test_args.save, "args.pkl"), "rb"))
         args = option_parser.deserialize(args)
@@ -103,6 +104,7 @@ def main():
             args = option_parser.text_deserialize(f.read().split())
             args = option_parser.post_process(args)
 
+    # 处理绘图结果保存
     if test_args.plot_cnt > 0:
         if osp.exists(test_args.plot_save):
             os.system(f'rm -rf {test_args.plot_save}')
@@ -129,7 +131,7 @@ def main():
             phase_decoders[-1].load_state_dict(state_dict)
     else:
         phase_decoders = []
-
+    # 加载模型权重
     for i in range(len(networks)):
         network = networks[i]
         target_file = f'{largest_epoch}_{i}_{args.phase_channels}Channels.pt'
@@ -141,19 +143,21 @@ def main():
     state_dict = clean_vq_state_dict(state_dict)
     VQ.load_state_dict(state_dict, strict=False)
 
+    # 将模型转移到设备并设置为推理模式
     for i in range(len(networks)):
         networks[i] = utility.ToDevice(networks[i])
         networks[i].eval()
 
     for i in range(len(phase_decoders)):
         phase_decoders[i] = utility.ToDevice(phase_decoders[i])
-        phase_decoders[i].train() # So it won't perform an extra normalization
+        phase_decoders[i].train()  # So it won't perform an extra normalization
 
     VQ = utility.ToDevice(VQ)
     VQ.eval()
 
     result_dict = []
     for i, network in enumerate(networks):
+        # 保存模型的嵌入信息和损失计算
         # filename = osp.join(Save, f'Parameters_{i}_final.txt')
         filename_npy = osp.join(Save, f'Manifolds_{i}_final.npz')
         # save_parameters(network, motion_datas[i], filename, args)
@@ -179,6 +183,7 @@ def main():
             pae_input = utility.ToDevice(pae_input)
             yPred, latent, signal, params, vq_info = network(pae_input)
 
+            # 相位解码器推理与损失计算
             if phase_decoder is not None:
                 if args.decoder_before_quantization:
                     input = params[5]
@@ -188,6 +193,7 @@ def main():
                 input = input.reshape(-1, input.shape[-1])
                 output = phase_decoder(input)
 
+                # args: Velocities,Positions,Rotations
                 gt = motion_data.get_feature_by_names(train_batch, args.needed_channel_names_phase_decoder)
                 gt = gt.permute(0, 2, 1)
                 gt = gt.reshape(-1, gt.shape[-1])
@@ -205,10 +211,12 @@ def main():
             to_save[f'loss_decoder_mean_{i}'] = losses_decoder.mean()
         to_save[f'loss_mean_{i}'] = losses.mean()
 
+    # 记录嵌入使用情况与总结
     usages = [get_usage(d['index'], args.num_embed_vq) for d in result_dict]
     usages = np.array(usages)
     write_vq(osp.join(test_args.save, 'VQ.npz'), utility.ItemNumpy(VQ.get_weight()), usages)
 
+    # 这里计算嵌入向量的使用情况（通过 get_usage 函数），并将结果保存到 .npz 文件中
     c_usages = [get_combinatorial_usage(d['index'], args.num_embed_vq) for d in result_dict]
     c_usages = np.stack(c_usages)
     used_by_both = (c_usages > 0).prod(axis=0)
@@ -219,6 +227,7 @@ def main():
         c_usage = get_combinatorial_dataset_usage(result_dict[i]['index'], used_by_both)
         to_save[f'Overlap percentage {motion_datas[i].name}'] = c_usage
 
+    # 保存最终结果
     print(to_save)
     with open(osp.join(test_args.save, 'summary_data.pickle'), 'wb') as handle:
         pickle.dump(to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)

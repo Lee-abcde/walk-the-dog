@@ -12,7 +12,8 @@ def create_model_from_args(args, motion_data):
     networks = []
     for data in motion_data:
         n_input_channels = data.get_n_channel_by_names(args.needed_channel_names)
-        intermediate_channels = args.intermediate_channels if hasattr(args, 'intermediate_channels') else n_input_channels // 3
+        intermediate_channels = args.intermediate_channels if hasattr(args,
+                                                                      'intermediate_channels') else n_input_channels // 3
         network = VQAE(
             n_input_channels=n_input_channels,
             n_latent_channels=args.n_latent_channel,
@@ -28,8 +29,10 @@ def create_model_from_args(args, motion_data):
             n_timing_phases=args.phase_channels
         )
         networks.append(network)
-    VQ = ResidualVectorQuantizer(args.use_vq, args.num_embed_vq, network.num_embed, args.beta, distance=args.vq_distance,
-                                 anchor='probrandom', first_batch=False, contras_loss=args.use_contrastive_loss, n_dataset=len(motion_data),
+    VQ = ResidualVectorQuantizer(args.use_vq, args.num_embed_vq, network.num_embed, args.beta,
+                                 distance=args.vq_distance,
+                                 anchor='probrandom', first_batch=False, contras_loss=args.use_contrastive_loss,
+                                 n_dataset=len(motion_data),
                                  multiple_updater=args.multiple_updater)
     for network in networks:
         network.v_quantizer = VQ.forward
@@ -223,7 +226,8 @@ class ResidualVectorQuantizer(nn.Module):
     def forward(self, z):
         if torch.isnan(z).any():
             zero = torch.tensor(0., device=z.device)
-            return z, zero, [[zero, zero, torch.zeros((z.shape[0]), device=z.device, dtype=torch.int64)] for _ in range(self.num_steps)]
+            return z, zero, [[zero, zero, torch.zeros((z.shape[0]), device=z.device, dtype=torch.int64)] for _ in
+                             range(self.num_steps)]
         z_quant = 0.
         loss = 0.
         infos = []
@@ -267,6 +271,7 @@ class FeaturePool:
     This buffer enables us to initialize the codebook using a history of generated features
     rather than the ones produced by the latest encoders
     """
+
     def __init__(self, pool_size, dim=64):
         """
         Initialize the FeaturePool class
@@ -277,7 +282,7 @@ class FeaturePool:
         self.pool_size = pool_size
         if self.pool_size > 0:
             self.nums_features = 0
-            self.features = (torch.rand((pool_size, dim)) * 2 - 1)/ pool_size
+            self.features = (torch.rand((pool_size, dim)) * 2 - 1) / pool_size
 
     def query(self, features):
         """
@@ -285,7 +290,8 @@ class FeaturePool:
         """
         self.features = self.features.to(features.device)
         if self.nums_features < self.pool_size:
-            if features.size(0) > self.pool_size: # if the batch size is large enough, directly update the whole codebook
+            if features.size(
+                    0) > self.pool_size:  # if the batch size is large enough, directly update the whole codebook
                 random_feat_id = torch.randint(0, features.size(0), (int(self.pool_size),))
                 self.features = features[random_feat_id]
                 self.nums_features = self.pool_size
@@ -307,6 +313,7 @@ class FeaturePool:
 
 @utility.numpy_wrapper
 def get_phase_manifold(state, angles):
+    # 这个函数 get_phase_manifold 是用来根据输入的状态(也就是椭圆A)和相位角度生成某种相位流形（manifold）以及信号（signal）。
     """
     :param state: (batch_size, n_channel_latent)
     :param angles: (batch_size, n_channel_phase, time_range)
@@ -319,6 +326,8 @@ def get_phase_manifold(state, angles):
     signal = y
     y = state @ y
     y = y.reshape(y.shape[0], -1, y.shape[-1])
+    # y：这个是根据状态和相位角度计算得到的流形。其形状为(batch_size, n_combined_features, time_range)，表示将状态和相位信息结合后的表示。
+    # signal：表示生成的相位信号，形状与angles相关，包含正弦和余弦形式的相位表示
     return y, signal
 
 
@@ -338,14 +347,14 @@ class VQAE(nn.Module):
         self.num_embed = 2 * n_latent_channels
 
         self.tpi = nn.Parameter(torch.tensor(2 * np.pi, dtype=torch.float32), requires_grad=False)
-        self.args = nn.Parameter(torch.from_numpy(np.linspace(-self.window/2, self.window/2, self.time_range,
+        self.args = nn.Parameter(torch.from_numpy(np.linspace(-self.window / 2, self.window / 2, self.time_range,
                                                               dtype=np.float32)), requires_grad=False)
 
         n_channels = [n_input_channels] + [intermediate_channels] * (n_layers - 1) + [n_latent_channels]
         normalizer = partial(utility.LN_v3, keep_std=True)
         self.convs = []
         for i in range(n_layers):
-            self.convs.append(nn.Conv1d(n_channels[i], n_channels[i+1], kernel_size, padding='same'))
+            self.convs.append(nn.Conv1d(n_channels[i], n_channels[i + 1], kernel_size, padding='same'))
             self.convs.append(normalizer(time_range))
             self.convs.append(nn.ELU())
         self.convs = nn.Sequential(*self.convs)
@@ -361,7 +370,7 @@ class VQAE(nn.Module):
         self.deconvs = []
         n_channels = n_channels[::-1]
         for i in range(n_layers):
-            self.deconvs.append(nn.Conv1d(n_channels[i], n_channels[i+1], kernel_size, padding='same'))
+            self.deconvs.append(nn.Conv1d(n_channels[i], n_channels[i + 1], kernel_size, padding='same'))
             if i != n_layers - 1:
                 self.deconvs.append(normalizer(time_range))
                 self.deconvs.append(nn.ELU())
@@ -380,7 +389,7 @@ class VQAE(nn.Module):
 
         return freq, amp, offset
 
-    def analytical_phase(self, latent, f, b):
+    def analytical_phase(self, latent, f, b):  # 这里是analytical计算的，我们可以用另一个网络来直接拟合Phase
         b = b.unsqueeze(-1)
         f = f.unsqueeze(-1)
 
@@ -390,22 +399,27 @@ class VQAE(nn.Module):
         p = -torch.atan2(sy, sx) / self.tpi
         return p
 
-    def pae(self, latent):
+    def pae(self, latent):  # timing branch
+        # 1-channel signal Y
         latent1d = self.phase_conv(latent)
+        # fft with nn to produce robust frequency
+        # a - amplify; b - offset
         f, a, b = self.fft_with_nn(latent1d, dim=2)
+        # Phase calc.
         p = self.analytical_phase(latent1d, f, b)
         return f, a, b, p
 
     def forward(self, x):
         # Encoding
         latent = self.convs(x)
+        # Timing branch
         f, a, b, p = self.pae(latent)
-
-        state_input = latent.mean(axis=-1)
-        state = self.state_fc(state_input)
-        state_ori = state
+        # Amplitude Branch
+        state_input = latent.mean(axis=-1)  # avg pooling
+        state = self.state_fc(state_input)  # MLP
+        state_ori = state  # state_ori is Raw Amplitude
         if self.use_vq:
-            state, loss_embed, info = self.v_quantizer(state)
+            state, loss_embed, info = self.v_quantizer(state)  # get the amplitude A
         else:
             loss_embed = 0.
             info = [None] * 3
@@ -414,13 +428,14 @@ class VQAE(nn.Module):
             info[2] = index_placeholder
 
         # Decoding
-        angles = self.tpi * (f.unsqueeze(-1) * self.args + p.unsqueeze(-1))
-
-        y, signal = get_phase_manifold(state, angles)
+        angles = self.tpi * (f.unsqueeze(-1) * self.args + p.unsqueeze(-1))  # calculate Sequence Phase
+        # Manifold Calc.
+        y, signal = get_phase_manifold(state, angles)  # 这里的椭圆参数A(state)是经过了VQ处理的
         manifold = y
         manifold_ori, _ = get_phase_manifold(state_ori, angles)
 
         y = self.deconvs(y)
         encoding_indices = torch.stack([i[2] for i in info], dim=-1)
         perplexities = [i[0] for i in info]
-        return y, latent, signal, (p, f, a, b, manifold, manifold_ori), (loss_embed, perplexities, state, encoding_indices, state_ori)
+        return y, latent, signal, (p, f, a, b, manifold, manifold_ori), (
+        loss_embed, perplexities, state, encoding_indices, state_ori)

@@ -124,7 +124,8 @@ def main():
 
     criteria = {'rec': torch.nn.MSELoss()}
 
-    if args.train_phase_decoder: # 训练解码器
+    # train decoder
+    if args.train_phase_decoder:
         phase_decoder_trainers = []
         for data in motion_datas:
             phase_decoder_trainers.append(prepare_phase_decoder(args, args, data))
@@ -154,13 +155,14 @@ def main():
                 pae_input = motion_data.get_feature_by_names(train_batch, args.needed_channel_names) # pae = phase autoEncoder
                 yPred, latent, signal, params, vq_info = network(pae_input)
 
+                # train phase decoder
                 if args.train_phase_decoder:
                     trainer = phase_decoder_trainers[class_idx]
                     gt = motion_data.get_feature_by_names(train_batch, args.needed_channel_names_phase_decoder)
                     if args.decoder_before_quantization:
-                        input = params[5]
+                        input = params[5]  # manifold_ori
                     else:
-                        input = params[4]
+                        input = params[4]  # manifold
                     input = input.permute(0, 2, 1)
                     input = input.reshape(-1, input.shape[-1])
                     gt = gt.permute(0, 2, 1)
